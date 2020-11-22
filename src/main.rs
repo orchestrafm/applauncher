@@ -39,7 +39,7 @@ struct InstallManifest {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PatchInfo {
-    pub id: i64,
+    pub id: u64,
     pub app: String,
     pub name: String,
     pub platform: String,
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // find user preferences
     let mut manifest = InstallManifest::default();
     let mut entry = AppEntry::default();
-    if let Some(proj_dirs) = ProjectDirs::from("fm", "Orchestra FM", "AppPatcher") {
+    let mut manifest_found = false;
     if let Some(proj_dirs) = ProjectDirs::from("fm", "Orchestra FM", "AppLauncher") {
         let data_local_dir = proj_dirs.data_local_dir();
 
@@ -91,6 +91,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dir: install_dir,
                     patch: 0,
                 };
+
+                // create directories while we are at it
+                fs::create_dir_all(data_local_dir).unwrap();
             } else {
                 MessageAlert {
                     title: "No directory chosen",
@@ -100,6 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .show()?;
                 std::process::exit(2);
             }
+        } else {
+            manifest_found = true;
         }
     }
     //manifest.games.push(entry);
@@ -215,10 +220,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let notify_finished_checksum_task = |total_tasks: usize, i: &mut i32| {
             *i += 1;
             send_state
-                .send(format!(
-                    "Comparing File Hashes... ({}/{})...",
-                    i, total_tasks
-                ))
+                .send(format!("Comparing File Hashes ({}/{})...", i, total_tasks))
+                .unwrap();
+        };
+
+        let notify_finished_applying_task = |total_tasks: usize, i: &mut i32| {
+            *i += 1;
+            send_state
+                .send(format!("Applying ({}/{})...", i, total_tasks))
                 .unwrap();
         };
 
@@ -271,6 +280,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // apply patch to directory
+            notify_finished_applying_task(total_tasks, &mut i);
+
             fs::create_dir("butler-workingdir").expect("");
             defer! { fs::remove_dir_all("butler-workingdir").expect("") }
             let cmd_output = process::Command::new("tools/butler")
@@ -293,11 +304,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "stderr: {}",
                 std::str::from_utf8(cmd_output.stderr.as_slice()).expect("")
             );
-            //return;
+
+            entry.patch = patch.id as u16;
         }
-        send_state
-            .send("Finished! You can now close this!".into())
-            .unwrap();
+        send_state.send("allok".into()).unwrap();
+        manifest.games.push(entry);
+
+        // persist manifest to disk
+        if manifest_found.eq(&false) {
+            if let Some(proj_dirs) = ProjectDirs::from("fm", "Orchestra FM", "AppLauncher") {
+                use std::io::prelude::*;
+                let data_local_dir = proj_dirs.data_local_dir();
+
+                let mut manifest_file =
+                    fs::File::create(data_local_dir.join("install.manifest")).unwrap();
+                let serialized_manifest = toml::to_string(&manifest).unwrap();
+                manifest_file
+                    .write_all(serialized_manifest.as_bytes())
+                    .unwrap();
+                manifest_file.sync_all().unwrap();
+            }
+        } else {
+            panic!("now what");
+        }
     });
 
     // main event loop
@@ -313,17 +342,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut error_label = error_label.clone();
 
         move || {
-            let ui_state = ui_state.borrow();
+            let mut ui_state = ui_state.borrow_mut();
 
             startup_label.set_text(&user_interface, &format!("{}", ui_state.startup_text));
             prepare_label.set_text(&user_interface, &format!("{}", ui_state.prepare_text));
-
+            update_label.set_text(&user_interface, &format!("{}", ui_state.update_text));
+            launch_label.set_text(&user_interface, &format!("{}", ui_state.launch_text));
             error_label.set_text(&user_interface, &format!("{}", current_operation));
 
-            match recv_state.try_recv() {
-                Err(_) => (),
-                Ok(performing_operation) => current_operation = performing_operation,
+            if ui_state.update.eq(&false) {
+                match recv_state.try_recv() {
+                    Err(e) => {
+                        if e.is_disconnected().eq(&true) {
+                            ui_state.update = true;
+                        }
+                    }
+                    Ok(performing_operation) => {
+                        if performing_operation.eq("allok") {
+                            current_operation = "Launching requested application.".into();
+                            ui_state.update_text = "Update...                                                                                  OK".into();
+                        } else if performing_operation.contains("error") {
+                            ui_state.update_text = "Update...                                                                                  FAIL".into();
+                        } else {
+                            current_operation = performing_operation;
+                        }
+                    }
+                }
             }
+
         }
     });
 
