@@ -327,7 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    event_loop.run(&user_interface);
+    event_loop.run_delay(&user_interface, 16);
 
     Ok(())
 }
