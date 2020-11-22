@@ -26,14 +26,13 @@ lazy_static! {
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct AppEntry {
-    name: String,
     dir: std::path::PathBuf,
     patch: u16,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct InstallManifest {
-    games: Vec<AppEntry>,
+    games: HashMap<String, AppEntry>,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -87,7 +86,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let install_dir_dialog = OpenSingleDir { dir: None };
             if let Some(install_dir) = install_dir_dialog.show()? {
                 entry = AppEntry {
-                    name: String::from("unnamed-sdvx-clone"),
                     dir: install_dir,
                     patch: 0,
                 };
@@ -110,10 +108,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             manifest = toml::from_slice(deseralized_manifest.as_slice())?;
 
             // find the app we actually want to update and launch
-            for (i, app) in manifest.games.iter().enumerate() {
-                if app.name.eq("unnamed-sdvx-clone") {
+            for (name, app) in manifest.games.iter() {
+                if name.eq("unnamed-sdvx-clone") {
                     entry = app.clone();
-                    manifest.games.remove(i); // QUEST: maybe use remove_item?
+                    manifest.games.remove("unnamed-sdvx-clone".into());
                     break;
                 }
             }
@@ -319,7 +317,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             entry.patch = patch.id as u16;
         }
         send_state.send("allok".into()).unwrap();
-        manifest.games.push(entry);
+        manifest
+            .games
+            .insert(String::from("unnamed-sdvx-clone"), entry);
 
         // persist manifest to disk
         if let Some(proj_dirs) = ProjectDirs::from("fm", "Orchestra FM", "AppLauncher") {
