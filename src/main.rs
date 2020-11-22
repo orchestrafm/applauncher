@@ -105,9 +105,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         } else {
             manifest_found = true;
+
+            let deseralized_manifest = fs::read(data_local_dir.join("install.manifest"))?;
+            manifest = toml::from_slice(deseralized_manifest.as_slice())?;
+
+            // find the app we actually want to update and launch
+            for (i, app) in manifest.games.iter().enumerate() {
+                if app.name.eq("unnamed-sdvx-clone") {
+                    entry = app.clone();
+                    manifest.games.remove(i); // QUEST: maybe use remove_item?
+                    break;
+                }
+            }
         }
     }
-    //manifest.games.push(entry);
 
     // prepare user interface state
     let ui_state = Rc::new(RefCell::new(UIState {
@@ -311,21 +322,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         manifest.games.push(entry);
 
         // persist manifest to disk
-        if manifest_found.eq(&false) {
-            if let Some(proj_dirs) = ProjectDirs::from("fm", "Orchestra FM", "AppLauncher") {
-                use std::io::prelude::*;
+        if let Some(proj_dirs) = ProjectDirs::from("fm", "Orchestra FM", "AppLauncher") {
+            use std::io::prelude::*;
+
+            let serialized_manifest = toml::to_string(&manifest).unwrap();
+
+            if manifest_found.eq(&false) {
                 let data_local_dir = proj_dirs.data_local_dir();
 
                 let mut manifest_file =
                     fs::File::create(data_local_dir.join("install.manifest")).unwrap();
-                let serialized_manifest = toml::to_string(&manifest).unwrap();
                 manifest_file
                     .write_all(serialized_manifest.as_bytes())
                     .unwrap();
                 manifest_file.sync_all().unwrap();
+            } else {
+                let data_local_dir = proj_dirs.data_local_dir();
+
+                fs::write(
+                    data_local_dir.join("install.manifest"),
+                    serialized_manifest.as_bytes(),
+                )
+                .unwrap();
             }
-        } else {
-            panic!("now what");
         }
     });
 
