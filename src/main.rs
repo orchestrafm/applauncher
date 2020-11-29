@@ -6,6 +6,7 @@ use std::fs;
 use std::io;
 use std::process;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::thread;
 
 use crc32c;
@@ -16,13 +17,19 @@ use iui::controls::{Label, VerticalBox};
 use iui::prelude::*;
 use lazy_static::lazy_static;
 use native_dialog::*;
+use octocrab::Octocrab;
 use reqwest::StatusCode;
 use scopeguard::{defer, defer_on_unwind};
+use semver::Version;
 use serde::{Deserialize, Serialize};
+use tokio::prelude::*;
 
 lazy_static! {
     static ref HTTP_CLIENT: reqwest::blocking::Client = reqwest::blocking::Client::new();
+    static ref GITHUB_CLIENT: Arc<Octocrab> = octocrab::instance();
 }
+
+const CURRENT_VERSION: &str = "0.1.0";
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct AppEntry {
@@ -63,11 +70,30 @@ struct UIState {
     error_text: String,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // startup step
 
     // initalize user interface library
     let user_interface = UI::init().expect("UI library failed to initialize.");
+
+    // make sure there is no updates available for the launcher
+    let latest_release = GITHUB_CLIENT
+        .repos("orchestrafm", "applauncher")
+        .releases()
+        .get_latest()
+        .await?;
+    let latest_version = Version::parse(latest_release.tag_name.strip_prefix("v").unwrap())?;
+
+    if latest_version > Version::parse(CURRENT_VERSION)? {
+        MessageAlert {
+            title: "Outdated Launcher",
+            text: "Please update to the latest version of the AppLauncher.",
+            typ: MessageType::Error,
+        }
+        .show()?;
+        process::exit(1);
+    }
 
     // find user preferences
     let mut manifest = InstallManifest::default();
@@ -99,7 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     typ: MessageType::Error,
                 }
                 .show()?;
-                std::process::exit(2);
+                process::exit(2);
             }
         } else {
             manifest_found = true;
