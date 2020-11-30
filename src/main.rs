@@ -7,7 +7,7 @@ use std::io;
 use std::process;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::thread;
+use std::{thread, time};
 
 use crc32c;
 use crossbeam::channel::unbounded;
@@ -29,7 +29,7 @@ lazy_static! {
     static ref GITHUB_CLIENT: Arc<Octocrab> = octocrab::instance();
 }
 
-const CURRENT_VERSION: &str = "0.1.0";
+const CURRENT_VERSION: &str = "0.1.1";
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct AppEntry {
@@ -214,6 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.show(&user_interface);
 
     // spin up a helper thread
+    let mut entry_for_ui = entry.clone();
     let (send_state, recv_state) = unbounded();
     let helper_thread = thread::spawn(move || {
         defer_on_unwind! {
@@ -413,6 +414,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
+            }
+
+            if ui_state.launch.eq(&false) && ui_state.update.eq(&true) {
+                ui_state.launch_text = "Launch...                                                                                OK".into();
+                ui_state.launch = true;
+
+                // launch the application
+                process::Command::new(entry_for_ui.dir.join("usc-game")).spawn().expect("failed to launch application");
+                thread::sleep(time::Duration::from_secs(1)); // Sleep(1) for effect
+                process::exit(0);
             }
 
         }
