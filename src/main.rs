@@ -29,7 +29,7 @@ lazy_static! {
     static ref GITHUB_CLIENT: Arc<Octocrab> = octocrab::instance();
 }
 
-const CURRENT_VERSION: &str = "0.1.1";
+const CURRENT_VERSION: &str = "0.1.2";
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct AppEntry {
@@ -151,9 +151,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         prepare: true,
         prepare_text: "Prepare...                                                                                 OK".into(),
         update: false,
-        update_text: "Update".into(),
+        update_text: "Update...".into(),
         launch: false,
-        launch_text: "Launch".into(),
+        launch_text: "Launch...".into(),
         error_text: "".into(),
     }));
 
@@ -267,6 +267,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap();
         };
 
+        // TODO: If an error occurs in this loop, persist the manifest anyway
         for patch in patch_list.iter() {
             // download patch file
             notify_finished_download_task(total_tasks, &mut i);
@@ -377,6 +378,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // main event loop
     let mut current_operation = String::from("Waiting For Tasks...");
+    let mut err_occurred = false;
     let mut event_loop = user_interface.event_loop();
     event_loop.on_tick(&user_interface, {
         // update labels
@@ -409,6 +411,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ui_state.update_text = "Update...                                                                                  OK".into();
                         } else if performing_operation.contains("error") {
                             ui_state.update_text = "Update...                                                                                  FAIL".into();
+                            err_occurred = true;
                         } else {
                             current_operation = performing_operation;
                         }
@@ -417,11 +420,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if ui_state.launch.eq(&false) && ui_state.update.eq(&true) {
-                ui_state.launch_text = "Launch...                                                                                OK".into();
                 ui_state.launch = true;
 
-                // launch the application
-                process::Command::new(entry_for_ui.dir.join("usc-game")).spawn().expect("failed to launch application");
+                if err_occurred.eq(&true) {
+                    // notify the user of an error
+                    ui_state.launch_text = "Launch...                                                                               FAIL".into();
+                    MessageAlert {
+                        title: "An error has occurred",
+                        text: "Patch checksums did not pass or the patching tool has found an issue with patching the directory. The program will now exit.",
+                        typ: MessageType::Error,
+                    }.show().expect("");
+
+                    process::exit(3);
+                } else {
+                    // launch the application
+                    ui_state.launch_text = "Launch...                                                                                OK".into();
+                    process::Command::new(entry_for_ui.dir.join("usc-game")).spawn().expect("failed to launch application");
+                }
+
                 thread::sleep(time::Duration::from_secs(1)); // Sleep(1) for effect
                 process::exit(0);
             }
