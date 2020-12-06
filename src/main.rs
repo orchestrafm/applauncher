@@ -29,7 +29,7 @@ lazy_static! {
     static ref GITHUB_CLIENT: Arc<Octocrab> = octocrab::instance();
 }
 
-const CURRENT_VERSION: &str = "0.1.2";
+const CURRENT_VERSION: &str = "0.1.3";
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct AppEntry {
@@ -331,6 +331,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "--signature",
                     "tmp-file.pwr.sig",
                 ])
+				.stdin(process::Stdio::null())
+				.stdout(process::Stdio::null())
+				.stderr(process::Stdio::null())
                 .output()
                 .expect("");
             println!(
