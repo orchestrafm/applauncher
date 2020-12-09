@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::os::windows::process::CommandExt;
 use std::process;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -29,7 +30,7 @@ lazy_static! {
     static ref GITHUB_CLIENT: Arc<Octocrab> = octocrab::instance();
 }
 
-const CURRENT_VERSION: &str = "0.1.3";
+const CURRENT_VERSION: &str = "0.1.4";
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct AppEntry {
@@ -321,21 +322,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             fs::create_dir("butler-workingdir").expect("");
             defer! { fs::remove_dir_all("butler-workingdir").expect("") }
-            let cmd_output = process::Command::new("tools/butler")
-                .args(&[
-                    "apply",
-                    "--staging-dir",
-                    "butler-workingdir",
-                    "tmp-file.pwr",
-                    entry.dir.to_str().expect(""),
-                    "--signature",
-                    "tmp-file.pwr.sig",
-                ])
-				.stdin(process::Stdio::null())
-				.stdout(process::Stdio::null())
-				.stderr(process::Stdio::null())
-                .output()
-                .expect("");
+            let cmd_output = if cfg!(target_os = "windows") {
+                process::Command::new("tools/butler")
+                    .args(&[
+                        "apply",
+                        "--staging-dir",
+                        "butler-workingdir",
+                        "tmp-file.pwr",
+                        entry.dir.to_str().expect(""),
+                        "--signature",
+                        "tmp-file.pwr.sig",
+                    ])
+                    .stdin(process::Stdio::null())
+                    .stdout(process::Stdio::null())
+                    .stderr(process::Stdio::null())
+                    .creation_flags(0x08000000)
+                    .output()
+                    .expect("")
+            } else {
+                process::Command::new("tools/butler")
+                    .args(&[
+                        "apply",
+                        "--staging-dir",
+                        "butler-workingdir",
+                        "tmp-file.pwr",
+                        entry.dir.to_str().expect(""),
+                        "--signature",
+                        "tmp-file.pwr.sig",
+                    ])
+                    .stdin(process::Stdio::null())
+                    .stdout(process::Stdio::null())
+                    .stderr(process::Stdio::null())
+                    .output()
+                    .expect("")
+            };
             println!(
                 "stdout: {}",
                 std::str::from_utf8(cmd_output.stdout.as_slice()).expect("")
